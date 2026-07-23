@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -8,19 +8,14 @@ namespace textEdit
 {
     class TextFormat
     {
-        /// <summary>
-        /// 获取文本文件的字符编码类型
-        /// </summary>
-        /// <param name="fileName"></param>
-        /// <returns></returns>
         public static Encoding GetTextFileEncodingType(string fileName)
         {
             Encoding encoding = Encoding.Default;
             FileStream fileStream = new FileStream(fileName, FileMode.Open, FileAccess.Read);
-            BinaryReader binaryReader = new BinaryReader(fileStream, encoding);
-            byte[] buffer = binaryReader.ReadBytes((int)fileStream.Length);
-            binaryReader.Close();
+            byte[] buffer = new byte[fileStream.Length];
+            fileStream.Read(buffer, 0, buffer.Length);
             fileStream.Close();
+
             if (buffer.Length >= 3 && buffer[0] == 239 && buffer[1] == 187 && buffer[2] == 191)
             {
                 encoding = Encoding.UTF8;
@@ -37,19 +32,84 @@ namespace textEdit
             {
                 encoding = Encoding.UTF8;
             }
+            else
+            {
+                encoding = DetectChineseEncoding(buffer);
+            }
+
             return encoding;
         }
 
-        /// <summary>
-        /// 判断是否是不带 BOM 的 UTF8 格式
-        /// BOM（Byte Order Mark），字节顺序标记，出现在文本文件头部，Unicode编码标准中用于标识文件是采用哪种格式的编码。
-        /// </summary>
-        /// <param name="data"></param>
-        /// <returns></returns>
+        private static Encoding DetectChineseEncoding(byte[] buffer)
+        {
+            Encoding gbk = Encoding.GetEncoding("GBK");
+            Encoding utf8 = new UTF8Encoding(false, true);
+
+            string gbkText = gbk.GetString(buffer);
+            string utf8Text = null;
+            try
+            {
+                utf8Text = utf8.GetString(buffer);
+            }
+            catch
+            {
+            }
+
+            int gbkChineseCount = CountChineseCharacters(gbkText);
+            int utf8ChineseCount = utf8Text != null ? CountChineseCharacters(utf8Text) : 0;
+            int gbkReplacementCount = CountReplacementChars(gbkText);
+            int utf8ReplacementCount = utf8Text != null ? CountReplacementChars(utf8Text) : int.MaxValue;
+
+            if (utf8Text != null && utf8ChineseCount > gbkChineseCount && utf8ReplacementCount <= gbkReplacementCount)
+            {
+                return Encoding.UTF8;
+            }
+
+            return gbk;
+        }
+
+        private static int CountChineseCharacters(string text)
+        {
+            int count = 0;
+            foreach (char c in text)
+            {
+                if (IsChineseCharacter(c))
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private static bool IsChineseCharacter(char c)
+        {
+            return (c >= 0x4E00 && c <= 0x9FFF) ||
+                   (c >= 0x3400 && c <= 0x4DBF) ||
+                   (c >= 0x20000 && c <= 0x2A6DF) ||
+                   (c >= 0xF900 && c <= 0xFAFF) ||
+                   (c >= 0x2F800 && c <= 0x2FA1F) ||
+                   c == 0x3000 || c == 0xFF0C || c == 0xFF1A || c == 0xFF01 || c == 0xFF1F ||
+                   c == 0x3002 || c == 0x300C || c == 0x300D || c == 0x300E || c == 0x300F ||
+                   c == 0x201C || c == 0x201D || c == 0x2018 || c == 0x2019;
+        }
+
+        private static int CountReplacementChars(string text)
+        {
+            int count = 0;
+            foreach (char c in text)
+            {
+                if (c == '\uFFFD')
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
         private static bool IsUTF8Bytes(byte[] data)
         {
-            int charByteCounter = 1; //计算当前正分析的字符应还有的字节数 
-            byte curByte; //当前分析的字节. 
+            int charByteCounter = 1;
+            byte curByte;
             for (int i = 0; i < data.Length; i++)
             {
                 curByte = data[i];
@@ -57,12 +117,10 @@ namespace textEdit
                 {
                     if (curByte >= 0x80)
                     {
-                        //判断当前 
                         while (((curByte <<= 1) & 0x80) != 0)
                         {
                             charByteCounter++;
                         }
-                        //标记位首位若为非0 则至少以2个1开始 如:110XXXXX...........1111110X 
                         if (charByteCounter == 1 || charByteCounter > 6)
                         {
                             return false;
@@ -71,7 +129,6 @@ namespace textEdit
                 }
                 else
                 {
-                    //若是UTF-8 此时第一位必须为1 
                     if ((curByte & 0xC0) != 0x80)
                     {
                         return false;

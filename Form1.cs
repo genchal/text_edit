@@ -1,5 +1,6 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Configuration;
 using System.IO;
 using System.Text;
@@ -13,28 +14,23 @@ namespace textEdit
         public Form1()
         {
             InitializeComponent();
-            //读取窗口大小
             Width = Properties.Settings.Default.width;
             Height = Properties.Settings.Default.height;
-            //读取工具栏状态
             EnableSplitPanel1.Checked = Properties.Settings.Default.toolsEnabel;
             splitContainer1.Panel1Collapsed = EnableSplitPanel1.Checked;
-            mainText.LanguageOption = RichTextBoxLanguageOptions.UIFonts; //防止中英文字体不一致
-            //文本拖拽导入功能
+            mainText.LanguageOption = RichTextBoxLanguageOptions.UIFonts;
             mainText.AllowDrop = true;
             mainText.DragEnter += new DragEventHandler(mainText_DragEnter);
             mainText.DragDrop += new DragEventHandler(mainText_DragDrop);
-            //初始化常见章节套路
-            //从文件中读取
             FreshTitleRule();
-            //加载段落格式
             DuanWei.Text = Properties.Settings.Default.DuanWei;
 
         }
         //=============参数===========//
 
-        //常用章节名称正则表达式
         private List<string> ruleList = new List<string>();
+        [Browsable(false)]
+        [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public RichTextBox TB
         {
             get { return mainText; }
