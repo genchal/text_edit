@@ -1,4 +1,4 @@
-﻿
+
 namespace textEdit
 {
     partial class SearchForm
@@ -11,7 +11,7 @@ namespace textEdit
         /// <summary>
         /// Clean up any resources being used.
         /// </summary>
-        /// <param name="disposing">true if managed resources should be disposed; otherwise, false.</param>
+        /// <param name="disposing">true if managed resources should be disposed;</param>
         protected override void Dispose(bool disposing)
         {
             if (disposing && (components != null))
@@ -38,8 +38,8 @@ namespace textEdit
             this.OnRe = new System.Windows.Forms.CheckBox();
             this.OnChange = new System.Windows.Forms.CheckBox();
             this.groupBox1 = new System.Windows.Forms.GroupBox();
-            this.toDown = new System.Windows.Forms.RadioButton();
-            this.toUP = new System.Windows.Forms.RadioButton();
+            this.toDown = new System.Windows.Forms.Button();
+            this.toUP = new System.Windows.Forms.Button();
             this.AllChange = new System.Windows.Forms.Button();
             this.ExitSearch = new System.Windows.Forms.Button();
             this.groupBox1.SuspendLayout();
@@ -134,29 +134,29 @@ namespace textEdit
             this.groupBox1.Size = new System.Drawing.Size(169, 63);
             this.groupBox1.TabIndex = 8;
             this.groupBox1.TabStop = false;
-            this.groupBox1.Text = "方向";
+            this.groupBox1.Text = "导航";
             // 
             // toDown
             // 
-            this.toDown.AutoSize = true;
-            this.toDown.Checked = true;
-            this.toDown.Location = new System.Drawing.Point(95, 27);
+            this.toDown.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.toDown.Location = new System.Drawing.Point(85, 25);
             this.toDown.Name = "toDown";
-            this.toDown.Size = new System.Drawing.Size(55, 24);
+            this.toDown.Size = new System.Drawing.Size(75, 28);
             this.toDown.TabIndex = 1;
-            this.toDown.TabStop = true;
-            this.toDown.Text = "向下";
+            this.toDown.Text = "下一个";
             this.toDown.UseVisualStyleBackColor = true;
+            this.toDown.Click += new System.EventHandler(this.toDown_Click);
             // 
             // toUP
             // 
-            this.toUP.AutoSize = true;
-            this.toUP.Location = new System.Drawing.Point(10, 27);
+            this.toUP.Font = new System.Drawing.Font("微软雅黑", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(134)));
+            this.toUP.Location = new System.Drawing.Point(10, 25);
             this.toUP.Name = "toUP";
-            this.toUP.Size = new System.Drawing.Size(55, 24);
+            this.toUP.Size = new System.Drawing.Size(75, 28);
             this.toUP.TabIndex = 0;
-            this.toUP.Text = "向上";
+            this.toUP.Text = "上一个";
             this.toUP.UseVisualStyleBackColor = true;
+            this.toUP.Click += new System.EventHandler(this.toUP_Click);
             // 
             // AllChange
             // 
@@ -207,7 +207,6 @@ namespace textEdit
             this.Text = "搜索";
             this.FormClosed += new System.Windows.Forms.FormClosedEventHandler(this.SearchForm_FormClosed);
             this.groupBox1.ResumeLayout(false);
-            this.groupBox1.PerformLayout();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -223,8 +222,8 @@ namespace textEdit
         private System.Windows.Forms.CheckBox OnRe;
         private System.Windows.Forms.CheckBox OnChange;
         private System.Windows.Forms.GroupBox groupBox1;
-        private System.Windows.Forms.RadioButton toDown;
-        private System.Windows.Forms.RadioButton toUP;
+        private System.Windows.Forms.Button toDown;
+        private System.Windows.Forms.Button toUP;
         private System.Windows.Forms.Button AllChange;
         private System.Windows.Forms.Button ExitSearch;
         public System.Windows.Forms.TextBox SearchText;

@@ -1,4 +1,4 @@
-﻿
+
 namespace textEdit
 {
     partial class Form1
@@ -342,7 +342,7 @@ namespace textEdit
             // linesIndex
             // 
             this.linesIndex.FillWeight = 50.76142F;
-            this.linesIndex.HeaderText = "行";
+            this.linesIndex.HeaderText = "位置";
             this.linesIndex.MinimumWidth = 30;
             this.linesIndex.Name = "linesIndex";
             this.linesIndex.ReadOnly = true;

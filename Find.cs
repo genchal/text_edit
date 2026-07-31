@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +10,6 @@ namespace textEdit
     class Find
     {
         //正则使用的关键标点符号
-        //public static string[] ExcludeList = { "$", "(", ")", "*", "+", ".", "[", "?", @"\", "^", "{", "|" };
         public static List<string> ExcludeList = new List<string> { @"\", "$", "(", ")", "*", "+", ".", "[", "?", "^", "{", "|" };
         public static string GetNoRe(string oldStr)
         {
@@ -21,85 +20,92 @@ namespace textEdit
             }
             return newStr;
         }
+
         /// <summary>
-        /// 正则查找算法
+        /// 获取全文所有正则匹配
         /// </summary>
-        /// <param name="tb">富文本</param>
-        /// <param name="rule">查找规则或关键词</param>
-        /// <param name="isFindUP">是否为向上搜索</param>
-        /// <returns>返回inde为关键词位于textbox的开头的索引以及正则搜索结果Match</returns>
-        public static Tuple<int, Match> ReFind(RichTextBox tb, string rule, bool isFindUP)
+        public static List<Tuple<int, int, string>> GetAllRegexMatches(RichTextBox tb, string rule)
         {
-            int start_point = tb.SelectionStart;
-            //按行获取文本，加快循环速度
-            string[] lines = tb.Lines;
-            //获取当前所在行数
-            int line_index = tb.GetLineFromCharIndex(start_point);
-            //返回的结果
-            Match result = Regex.Match(" ", "0");
-            int index = tb.GetFirstCharIndexFromLine(line_index);
-            if (isFindUP)
+            List<Tuple<int, int, string>> matches = new List<Tuple<int, int, string>>();
+            MatchCollection collection = Regex.Matches(tb.Text, rule);
+            foreach (Match m in collection)
             {
-                //获取截至光标所在的所有文本
-                string text = tb.Text.Substring(0, start_point);
-                for (int len = 1; len <= start_point; len++)
-                {
-                    int start_char_index = start_point - len;
-                    string input_text = text.Substring(start_char_index, len);
-                    result = Regex.Match(input_text, rule);
-                    if (result.Success)
-                    {
-                        index = start_char_index;
-                        break;
-                    }
-                }
+                matches.Add(new Tuple<int, int, string>(m.Index, m.Length, m.Value));
             }
-            //向下搜索
-            else
-            {
-                //检查选中状态
-                if (tb.SelectedText.Length > 0)
-                    //开始查找位置应该后移
-                    start_point += tb.SelectedText.Length;
-                //获取从光标开始的后面的所有文本
-                string text = tb.Text.Substring(start_point);
-                result = Regex.Match(text, rule);
-                index = start_point + result.Index;
-            }
-
-            return new Tuple<int, Match>(index, result);
+            return matches;
         }
 
-        public static void FindUP(RichTextBox rtb, string keyWord)
+        /// <summary>
+        /// 获取全文所有文本匹配
+        /// </summary>
+        public static List<Tuple<int, int, string>> GetAllTextMatches(RichTextBox tb, string keyWord)
         {
-            //获取当前光标位置
-            int focus_index = rtb.SelectionStart;
-            int index = rtb.Find(keyWord, 0, focus_index, RichTextBoxFinds.Reverse);
-            if (index > -1)
+            List<Tuple<int, int, string>> matches = new List<Tuple<int, int, string>>();
+            int index = 0;
+            while (index < tb.Text.Length)
             {
-                rtb.SelectionStart = index;
-                rtb.SelectionLength = keyWord.Length;
+                int found = tb.Text.IndexOf(keyWord, index, StringComparison.OrdinalIgnoreCase);
+                if (found == -1) break;
+                matches.Add(new Tuple<int, int, string>(found, keyWord.Length, keyWord));
+                index = found + keyWord.Length;
             }
-            else
-                MessageBox.Show("搜索完毕，没有找到" + keyWord, "提示");
+            return matches;
         }
 
-        public static void FindDown(RichTextBox rtb, string keyWord)
+        /// <summary>
+        /// 从光标位置找到第一个匹配项的索引
+        /// </summary>
+        public static int FindFirstMatchIndex(int cursorPos, List<Tuple<int, int, string>> matches)
         {
-            //获取当前光标位置
-            int focus_index = rtb.SelectionStart;
-            //检查选中状态
-            if (rtb.SelectedText.Length > 0)
-                //开始查找位置应该后移
-                focus_index += rtb.SelectedText.Length;
-            int index = rtb.Find(keyWord, focus_index, RichTextBoxFinds.None);
-            if (index > -1)
+            for (int i = 0; i < matches.Count; i++)
             {
-                rtb.SelectionStart = index;
-                rtb.SelectionLength = keyWord.Length;
+                if (matches[i].Item1 >= cursorPos)
+                    return i;
             }
-            else
-                MessageBox.Show("搜索完毕，没有找到" + keyWord, "提示");
+            //如果光标位置之后没有匹配，返回第一个（循环）
+            return matches.Count > 0 ? 0 : -1;
+        }
+
+        /// <summary>
+        /// 导航到指定匹配项
+        /// </summary>
+        public static void NavigateToMatch(RichTextBox tb, Tuple<int, int, string> match)
+        {
+            //检查是否已经在该位置
+            if (tb.SelectionStart == match.Item1 && tb.SelectionLength == match.Item2)
+                return; //已经在正确位置，不跳转
+
+            tb.SuspendLayout();
+            try
+            {
+                tb.SelectionStart = match.Item1;
+                tb.SelectionLength = match.Item2;
+                tb.ScrollToCaret();
+            }
+            finally
+            {
+                tb.ResumeLayout();
+            }
+        }
+
+        /// <summary>
+        /// 获取上一个匹配项索引
+        /// </summary>
+        public static int GetPrevMatchIndex(int currentIndex, int totalCount)
+        {
+            if (currentIndex <= 0)
+                return totalCount - 1; //循环到最后
+            return currentIndex - 1;
+        }
+
+        /// <summary>
+        /// 获取下一个匹配项索引
+        /// </summary>
+        public static int GetNextMatchIndex(int currentIndex, int totalCount)
+        {
+            if (currentIndex >= totalCount - 1)
+                return 0; //循环到开头
+            return currentIndex + 1;
         }
     }
 }

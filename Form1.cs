@@ -115,6 +115,9 @@ namespace textEdit
             }
             //清空表格
             dataGridView1.Rows.Clear();
+            //默认开启自动换行
+            mainText.WordWrap = true;
+            AutoEnter.Checked = true;
         }
         //正常保存
         private void saveTxt()
@@ -159,10 +162,10 @@ namespace textEdit
                 saveTxt();
             }
         }
-        //章节显示
-        private void showMessage(int line_index, string ttName)
+        //章节显示 - 使用字符索引存储，便于精确定位
+        private void showMessage(int charIndex, string ttName)
         {
-            string[] msg = { line_index.ToString(), ttName };
+            string[] msg = { charIndex.ToString(), ttName };
             dataGridView1.Rows.Add(msg);
         }
         //获取当前字体格式
@@ -238,20 +241,86 @@ namespace textEdit
         {
             //清空表格
             dataGridView1.Rows.Clear();
-            //检查章节是否正确
-            int i = 0;
-            foreach (string line in mainText.Lines)
+            //保存当前WordWrap状态
+            bool savedWordWrap = mainText.WordWrap;
+            try
             {
-                //检查行中是否存在章节名称
-                Match result = Regex.Match(line, TitleRule.Text);
-                if (result.Success)
+                //关闭自动换行以获取正确的行号
+                mainText.WordWrap = false;
+                mainText.SuspendLayout();
+
+                //全文正则匹配，使用Multiline选项使^和$匹配每行
+                MatchCollection matches = Regex.Matches(mainText.Text, TitleRule.Text, RegexOptions.Multiline);
+                foreach (Match match in matches)
                 {
-                    if (TitleIsAlone.Checked)
-                        showMessage(i, line);
+                    //=====计算跳转位置：跳过匹配开头的换行/空白，定位到章节名行首个非空白字符=====
+                    int navIndex = match.Index;
+                    //先跳过匹配开头的换行符和空白字符
+                    int offset = 0;
+                    while (offset < match.Length && (match.Value[offset] == '\r' || match.Value[offset] == '\n' || char.IsWhiteSpace(match.Value[offset])))
+                    {
+                        offset++;
+                    }
+                    if (offset < match.Length)
+                        navIndex = match.Index + offset;
+
+                    //进一步确保：跳转位置定位到该位置所在行的第一个非空白字符
+                    int lineIdx = mainText.GetLineFromCharIndex(navIndex);
+                    //使用Lines[]直接获取行内容（WordWrap=false时为逻辑行，最可靠）
+                    if (lineIdx < 0 || lineIdx >= mainText.Lines.Length)
+                        continue;
+                    string lineContent = mainText.Lines[lineIdx] ?? "";
+                    int lineStartIdx = mainText.GetFirstCharIndexFromLine(lineIdx);
+                    //查找行中第一个非空白字符
+                    int nonSpaceOffset = 0;
+                    while (nonSpaceOffset < lineContent.Length && char.IsWhiteSpace(lineContent[nonSpaceOffset]))
+                    {
+                        nonSpaceOffset++;
+                    }
+                    if (nonSpaceOffset < lineContent.Length)
+                        navIndex = lineStartIdx + nonSpaceOffset;
                     else
-                        showMessage(i, result.Value);
+                        navIndex = lineStartIdx;
+                    //=====================================================================
+
+                    if (TitleIsAlone.Checked)
+                    {
+                        //章节单独成行：直接用行内容
+                        showMessage(navIndex, lineContent.Trim());
+                    }
+                    else
+                    {
+                        //章节内嵌：用匹配值，但去掉前缀换行/空白后取第一行
+                        string title = match.Value;
+                        //先去掉开头的换行和空白
+                        int titleOffset = 0;
+                        while (titleOffset < title.Length && (title[titleOffset] == '\r' || title[titleOffset] == '\n' || char.IsWhiteSpace(title[titleOffset])))
+                        {
+                            titleOffset++;
+                        }
+                        if (titleOffset > 0)
+                            title = title.Substring(titleOffset);
+                        //再去掉后续换行
+                        int newLinePos = title.IndexOf('\r');
+                        if (newLinePos == -1)
+                            newLinePos = title.IndexOf('\n');
+                        if (newLinePos > 0)
+                            title = title.Substring(0, newLinePos);
+                        if (string.IsNullOrWhiteSpace(title))
+                            title = lineContent.Trim(); //兜底：用行内容
+                        showMessage(navIndex, title.Trim());
+                    }
                 }
-                i++;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("正则表达式错误: " + ex.Message, "错误");
+            }
+            finally
+            {
+                //恢复WordWrap状态
+                mainText.ResumeLayout();
+                mainText.WordWrap = savedWordWrap;
             }
         }
         //保存段末形式到本地
@@ -267,24 +336,21 @@ namespace textEdit
                 MessageBox.Show(ex.Message);
             }
         }
-        //双击定位章节
+        //双击定位章节 - 使用字符索引精确定位
         private void dataGridView1_CellMouseDoubleClick(object sender, DataGridViewCellMouseEventArgs e)
         {
             if (e.RowIndex >= 0)
             {
-                //获取行数
+                //获取字符索引
                 int select_index = dataGridView1.CurrentRow.Index;
                 string index_str = dataGridView1.Rows[select_index].Cells["linesIndex"].Value.ToString();
                 try
                 {
-                    int line_index = int.Parse(index_str);
-                    //自动换行后，richtextbox的真实行数不等于原来的行数，因此需要先关掉自动换行，再将光标移动到章节所在行
-                    if (mainText.WordWrap)
-                        mainText.WordWrap = false;
-                    mainText.SelectionStart = mainText.GetFirstCharIndexFromLine(line_index);
+                    int charIndex = int.Parse(index_str);
+                    //直接使用字符索引定位，无需关闭WordWrap
+                    mainText.SelectionStart = charIndex;
+                    mainText.SelectionLength = 0;
                     mainText.Focus();
-                    //如果之前是开启了自动换行，则此时应该将变换状态转换回去
-                    mainText.WordWrap = AutoEnter.Checked;
                     mainText.ScrollToCaret();
                 }
                 catch (Exception ex)
