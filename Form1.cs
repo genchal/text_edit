@@ -24,11 +24,18 @@ namespace textEdit
             mainText.DragDrop += new DragEventHandler(mainText_DragDrop);
             FreshTitleRule();
             DuanWei.Text = Properties.Settings.Default.DuanWei;
-
+            //默认全屏最大化
+            WindowState = FormWindowState.Maximized;
         }
         //=============参数===========//
 
         private List<string> ruleList = new List<string>();
+        //编译后的正则缓存：key=规则字符串, value=Regex实例
+        private static readonly Dictionary<string, Regex> _regexCache = new Dictionary<string, Regex>();
+        //上次用于构建行索引的文本和行索引缓存，避免重复扫描
+        private string _lastLineSourceText = null;
+        private int[] _lineStartIndices = null;
+        private string[] _lineContents = null;
         [Browsable(false)]
         [DesignerSerializationVisibility(DesignerSerializationVisibility.Hidden)]
         public RichTextBox TB
@@ -236,81 +243,99 @@ namespace textEdit
         {
             TitleRule.Text = ruleList[usualTitle.SelectedIndex];
         }
-        //检查章节
+        //检查章节 - 性能优化版：正则缓存、行索引预构建、二分查找、批量添加
         private void CheckedTitle_Click(object sender, EventArgs e)
         {
-            //清空表格
             dataGridView1.Rows.Clear();
-            //保存当前WordWrap状态
+            string rule = TitleRule.Text;
+            if (string.IsNullOrEmpty(rule)) return;
+
             bool savedWordWrap = mainText.WordWrap;
             try
             {
-                //关闭自动换行以获取正确的行号
+                //关闭自动换行以保证逻辑行和行索引一致（虽然我们用自己构建的索引，但仍然对齐）
                 mainText.WordWrap = false;
                 mainText.SuspendLayout();
 
-                //全文正则匹配，使用Multiline选项使^和$匹配每行
-                MatchCollection matches = Regex.Matches(mainText.Text, TitleRule.Text, RegexOptions.Multiline);
+                //===== 步骤1：取全文文本（只读一次RichTextBox.Text，避免重复昂贵调用）
+                string fullText = mainText.Text;
+                if (string.IsNullOrEmpty(fullText)) return;
+
+                //===== 步骤2：正则缓存 + Compiled选项（反复执行同一规则时省掉编译开销）
+                Regex regex;
+                if (!_regexCache.TryGetValue(rule, out regex))
+                {
+                    regex = new Regex(rule, RegexOptions.Multiline | RegexOptions.Compiled);
+                    _regexCache[rule] = regex;
+                }
+
+                //===== 步骤3：预构建行起始索引数组 + 行内容缓存（文本不变时不复用，只在本函数执行时复用到所有匹配项）
+                EnsureLineIndicesBuilt(fullText);
+                int[] lineStarts = _lineStartIndices;
+                string[] lines = _lineContents;
+                int lineCount = lineStarts.Length;
+
+                //===== 步骤4：批量收集章节行（用DataGridViewRow对象，AddRange只接受这个类型）
+                List<DataGridViewRow> rows = new List<DataGridViewRow>();
+                bool titleAlone = TitleIsAlone.Checked;
+
+                MatchCollection matches = regex.Matches(fullText);
                 foreach (Match match in matches)
                 {
-                    //=====计算跳转位置：跳过匹配开头的换行/空白，定位到章节名行首个非空白字符=====
+                    //跳过匹配开头的换行/空白，算出navIndex所在行
                     int navIndex = match.Index;
-                    //先跳过匹配开头的换行符和空白字符
-                    int offset = 0;
-                    while (offset < match.Length && (match.Value[offset] == '\r' || match.Value[offset] == '\n' || char.IsWhiteSpace(match.Value[offset])))
-                    {
-                        offset++;
-                    }
-                    if (offset < match.Length)
-                        navIndex = match.Index + offset;
+                    int mlen = match.Length;
+                    int off = 0;
+                    while (off < mlen && (match.Value[off] == '\r' || match.Value[off] == '\n' || char.IsWhiteSpace(match.Value[off])))
+                        off++;
+                    if (off < mlen)
+                        navIndex = match.Index + off;
 
-                    //进一步确保：跳转位置定位到该位置所在行的第一个非空白字符
-                    int lineIdx = mainText.GetLineFromCharIndex(navIndex);
-                    //使用Lines[]直接获取行内容（WordWrap=false时为逻辑行，最可靠）
-                    if (lineIdx < 0 || lineIdx >= mainText.Lines.Length)
-                        continue;
-                    string lineContent = mainText.Lines[lineIdx] ?? "";
-                    int lineStartIdx = mainText.GetFirstCharIndexFromLine(lineIdx);
-                    //查找行中第一个非空白字符
-                    int nonSpaceOffset = 0;
-                    while (nonSpaceOffset < lineContent.Length && char.IsWhiteSpace(lineContent[nonSpaceOffset]))
-                    {
-                        nonSpaceOffset++;
-                    }
-                    if (nonSpaceOffset < lineContent.Length)
-                        navIndex = lineStartIdx + nonSpaceOffset;
-                    else
-                        navIndex = lineStartIdx;
-                    //=====================================================================
+                    //二分查找 navIndex 所在行
+                    int lineIdx = BinarySearchLineIndex(lineStarts, navIndex);
+                    if (lineIdx < 0 || lineIdx >= lineCount) continue;
+                    string lineContent = lines[lineIdx] ?? "";
+                    int lineStartIdx = lineStarts[lineIdx];
 
-                    if (TitleIsAlone.Checked)
+                    //本行第一个非空白字符，作为精确跳转位置
+                    int nonSpaceOff = 0;
+                    while (nonSpaceOff < lineContent.Length && char.IsWhiteSpace(lineContent[nonSpaceOff]))
+                        nonSpaceOff++;
+                    navIndex = nonSpaceOff < lineContent.Length ? lineStartIdx + nonSpaceOff : lineStartIdx;
+
+                    //显示章节名
+                    string displayName;
+                    if (titleAlone)
                     {
-                        //章节单独成行：直接用行内容
-                        showMessage(navIndex, lineContent.Trim());
+                        displayName = lineContent.Trim();
                     }
                     else
                     {
-                        //章节内嵌：用匹配值，但去掉前缀换行/空白后取第一行
                         string title = match.Value;
-                        //先去掉开头的换行和空白
-                        int titleOffset = 0;
-                        while (titleOffset < title.Length && (title[titleOffset] == '\r' || title[titleOffset] == '\n' || char.IsWhiteSpace(title[titleOffset])))
-                        {
-                            titleOffset++;
-                        }
-                        if (titleOffset > 0)
-                            title = title.Substring(titleOffset);
-                        //再去掉后续换行
-                        int newLinePos = title.IndexOf('\r');
-                        if (newLinePos == -1)
-                            newLinePos = title.IndexOf('\n');
-                        if (newLinePos > 0)
-                            title = title.Substring(0, newLinePos);
+                        //去掉前缀换行/空白
+                        int toff = 0;
+                        while (toff < title.Length && (title[toff] == '\r' || title[toff] == '\n' || char.IsWhiteSpace(title[toff])))
+                            toff++;
+                        if (toff > 0)
+                            title = title.Substring(toff);
+                        int nl = title.IndexOf('\r');
+                        if (nl < 0) nl = title.IndexOf('\n');
+                        if (nl > 0)
+                            title = title.Substring(0, nl);
                         if (string.IsNullOrWhiteSpace(title))
-                            title = lineContent.Trim(); //兜底：用行内容
-                        showMessage(navIndex, title.Trim());
+                            title = lineContent.Trim();
+                        displayName = title.Trim();
                     }
+
+                    //构造DataGridViewRow用于批量AddRange
+                    DataGridViewRow r = new DataGridViewRow();
+                    r.CreateCells(dataGridView1, navIndex.ToString(), displayName);
+                    rows.Add(r);
                 }
+
+                //一次性把所有行加进GridView（显著减少重绘次数）
+                if (rows.Count > 0)
+                    dataGridView1.Rows.AddRange(rows.ToArray());
             }
             catch (Exception ex)
             {
@@ -318,10 +343,65 @@ namespace textEdit
             }
             finally
             {
-                //恢复WordWrap状态
                 mainText.ResumeLayout();
                 mainText.WordWrap = savedWordWrap;
             }
+        }
+
+        //构建行起始索引 + 行内容数组（只扫描一遍字符串，O(n)一次完成）
+        private void EnsureLineIndicesBuilt(string text)
+        {
+            if (ReferenceEquals(_lastLineSourceText, text) && _lineStartIndices != null)
+                return; //复用缓存
+            List<int> starts = new List<int>();
+            List<string> contents = new List<string>();
+            int len = text.Length;
+            int start = 0;
+            for (int i = 0; i < len; i++)
+            {
+                char c = text[i];
+                if (c == '\r')
+                {
+                    starts.Add(start);
+                    contents.Add(text.Substring(start, i - start));
+                    if (i + 1 < len && text[i + 1] == '\n') i++; //吞掉\n
+                    start = i + 1;
+                }
+                else if (c == '\n')
+                {
+                    starts.Add(start);
+                    contents.Add(text.Substring(start, i - start));
+                    start = i + 1;
+                }
+            }
+            //最后一行（即使没有换行结尾）
+            starts.Add(start);
+            contents.Add(text.Substring(start, len - start));
+
+            _lineStartIndices = starts.ToArray();
+            _lineContents = contents.ToArray();
+            _lastLineSourceText = text;
+        }
+
+        //二分查找：给定字符位置，返回所在行号
+        private static int BinarySearchLineIndex(int[] lineStarts, int charIndex)
+        {
+            int lo = 0, hi = lineStarts.Length - 1;
+            int result = 0;
+            while (lo <= hi)
+            {
+                int mid = lo + ((hi - lo) >> 1);
+                if (lineStarts[mid] <= charIndex)
+                {
+                    result = mid;
+                    lo = mid + 1;
+                }
+                else
+                {
+                    hi = mid - 1;
+                }
+            }
+            return result;
         }
         //保存段末形式到本地
         private void saveDuanWei_Click(object sender, EventArgs e)
